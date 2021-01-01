@@ -1,0 +1,9 @@
+# Blender auto-generated backups
+*.blend1
+
+# Compiled Source models
+*.vtx
+*.mdl
+*.phy
+*.sw.vtx
+*.vvd
