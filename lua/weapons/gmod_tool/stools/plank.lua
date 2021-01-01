@@ -32,10 +32,32 @@ local CONVAR_PLANK_MODEL = "model"	 -- What model should be used for planks?
 
 if (CLIENT) then
 	TOOL.ClientConVar[CONVAR_WELD] = "1"
-	TOOL.ClientConVar[CONVAR_FREEZE] = "0"
+	TOOL.ClientConVar[CONVAR_FREEZE] = "1"
 	TOOL.ClientConVar[CONVAR_NOCOLLIDE] = "0"
 	TOOL.ClientConVar[CONVAR_THICKNESS] = "4"
 	TOOL.ClientConVar[CONVAR_PLANK_MODEL] = "models/props/plank_swep/plank.mdl"
+end
+
+if (CLIENT) then
+	language.Add("tool.plank." .. CONVAR_WELD, "Weld")
+	language.Add(
+		"tool.plank." .. CONVAR_WELD .. ".help",
+		"If selected, plank will be welded at both ends"
+	)
+
+	language.Add("tool.plank." .. CONVAR_FREEZE, "Freeze")
+	language.Add(
+		"tool.plank." .. CONVAR_FREEZE .. ".help",
+		"If selected, plank will be frozen when placed"
+	)
+
+	language.Add("tool.plank." .. CONVAR_NOCOLLIDE, "No Collide")
+	language.Add(
+		"tool.plank." .. CONVAR_NOCOLLIDE .. ".help",
+		"If selected, collisions with connected props will be disabled"
+	)
+
+	language.Add("tool.plank." .. CONVAR_THICKNESS, "Thickness:")
 end
 
 --------------------------------------------------------------------------------
@@ -182,7 +204,7 @@ function TOOL:LeftClick(trace)
 		end
 
 		cleanup.Add(owner, "props", ent)
-		undo.Create("plank")
+		undo.Create("Plank")
 			undo.AddEntity(ent)
 			undo.AddEntity(startWeld)
 			undo.AddEntity(endWeld)
@@ -210,4 +232,37 @@ function TOOL:UpdateGhostPlank(ent, trace)
 
 	ent:SetAngles((startPos - endPos):AngleEx(trace.Normal))
 	UpdateClientPlank(ent, startPos:Distance(endPos), math.max(1, self:GetClientNumber(CONVAR_THICKNESS)))
+end
+
+local ConVarsDefault = TOOL:BuildConVarList()
+
+function TOOL.BuildCPanel( CPanel )
+	CPanel:AddControl( "Header", { Description = "#tool.plank.desc" } )
+	CPanel:AddControl( "ComboBox", { MenuButton = 1, Folder = "plank", Options = { [ "#preset.default" ] = ConVarsDefault }, CVars = table.GetKeys( ConVarsDefault ) } )
+
+	CPanel:AddControl( "Slider", {
+		Label = "#tool.plank." .. CONVAR_THICKNESS,
+		Command = "plank_" .. CONVAR_THICKNESS,
+		Type = "Float",
+		Min = 1,
+		Max = 32
+	})
+
+	CPanel:AddControl( "Checkbox", {
+		Label = "#tool.plank." .. CONVAR_WELD,
+		Command = "plank_" .. CONVAR_WELD,
+		Help = true
+	})
+
+	CPanel:AddControl( "Checkbox", {
+		Label = "#tool.plank." .. CONVAR_NOCOLLIDE,
+		Command = "plank_" .. CONVAR_NOCOLLIDE,
+		Help = true
+	})
+
+	CPanel:AddControl( "Checkbox", {
+		Label = "#tool.plank." .. CONVAR_FREEZE,
+		Command = "plank_" .. CONVAR_FREEZE,
+		Help = true
+	})
 end
