@@ -127,6 +127,8 @@ function ScalePhysicsMesh(ent, factor)
 	return ent:GetPhysicsObject()
 end
 
+local ENT_MODIFIER_PLANK = "plank_params"
+
 --[[
 	SpawnPlank spawns a plank with `model` between `startPos` and `endPos`. The
 	plank is `thickness` units thick and has a flat side facing `normal`. It
@@ -137,6 +139,11 @@ end
 function SpawnPlank(model, startPos, endPos, thickness, normal)
 	local ent = ents.Create("prop_physics")
 	if (not IsValid(ent)) then return nil, nil end
+
+	-- Raise the plank slightly above the surface to prevent weird physics
+	local offset = 0.75 * normal
+	startPos = startPos + offset
+	endPos = endPos + offset
 
 	ent:SetModel(model)
 	ent:SetPos(startPos)
@@ -153,10 +160,27 @@ function SpawnPlank(model, startPos, endPos, thickness, normal)
 
 	ent:GetPhysicsObject():Wake()
 	UpdateClientPlank(ent, length, thickness)
+
+	duplicator.StoreEntityModifier(ent, ENT_MODIFIER_PLANK, { 
+		length = length,
+		thickness = thickness
+	})
 	
 	return ent, physObj
 end
 
+function RestorePlank(owner, ent, data)
+	local startPos = ent:GetPos()
+	local length = data.length
+	physObj = ScalePhysicsMesh(ent, Vector(length/2, data.thickness, 1))
+	if not (IsValid(physObj)) then return nil, nil end
+	physObj:SetMass(60)
+
+	ent:GetPhysicsObject():Wake()
+	UpdateClientPlank(ent, length, data.thickness)
+end
+
+duplicator.RegisterEntityModifier(ENT_MODIFIER_PLANK, RestorePlank)
 
 function UpdateClientPlank(ent, length, thickness)
 	net.Start(UPDATE_VISUAL_MSG)
