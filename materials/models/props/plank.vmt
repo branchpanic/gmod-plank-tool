@@ -1,0 +1,6 @@
+VertexLitGeneric
+{
+	$basetexture "models/props/plank_diffuse"
+	$bumpmap "models/props/plank_normal"
+	$surfaceprop Wood_Plank
+}
