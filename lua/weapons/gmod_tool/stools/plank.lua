@@ -3,7 +3,7 @@
 ]]
 
 --------------------------------------------------------------------------------
--- Tool Metadata
+-- Tool Metadata & Configuration
 --------------------------------------------------------------------------------
 
 TOOL.Category = "Construction"
@@ -13,20 +13,9 @@ TOOL.Information = {
 	{ name = "left_1", stage = 1 }
 }
 
-if (CLIENT) then
-	language.Add("tool.plank.name", "Plank")
-	language.Add("tool.plank.desc", "Create a wooden plank between two points")
-	language.Add("tool.plank.left", "Select the first point")
-	language.Add("tool.plank.left_1", "Select the second point")
-end
-
---------------------------------------------------------------------------------
--- ConVars
---------------------------------------------------------------------------------
-
 local CONVAR_WELD = "weld"			 -- Weld planks at their endpoints?
 local CONVAR_FREEZE = "freeze"		 -- Freeze created planks?
-local CONVAR_NOCOLLIDE = "nocollide" -- Nocollide plank and endpoints?
+local CONVAR_NOCOLLIDE = "nocollide" -- Nocollide planks with their endpoints?
 local CONVAR_THICKNESS = "thickness" -- How thick should planks be?
 local CONVAR_PLANK_MODEL = "model"	 -- What model should be used for planks?
 
@@ -38,7 +27,18 @@ if (CLIENT) then
 	TOOL.ClientConVar[CONVAR_PLANK_MODEL] = "models/props/plank_swep/plank.mdl"
 end
 
+local ConVarsDefault = TOOL:BuildConVarList()
+
+--------------------------------------------------------------------------------
+-- Localization
+--------------------------------------------------------------------------------
+
 if (CLIENT) then
+	language.Add("tool.plank.name", "Plank")
+	language.Add("tool.plank.desc", "Create a wooden plank between two points")
+	language.Add("tool.plank.left", "Select the first point")
+	language.Add("tool.plank.left_1", "Select the second point")
+
 	language.Add("tool.plank." .. CONVAR_WELD, "Weld")
 	language.Add(
 		"tool.plank." .. CONVAR_WELD .. ".help",
@@ -208,18 +208,23 @@ function TOOL:LeftClick(trace)
 		local thickness = math.max(1, self:GetClientNumber(CONVAR_THICKNESS))
 		local ent, physObj = SpawnPlank(model, self:GetPos(2), trace.HitPos, thickness, trace.HitNormal)
 
-		if (self:GetClientNumber(CONVAR_WELD) == 1) then
-			local startEnt = self:GetEnt(2)
-			local startBone = self:GetBone(2)
-			local endEnt = trace.Entity
-			local endBone = trace.PhysicsBone
+		local startEnt = self:GetEnt(2)
+		local startBone = self:GetBone(2)
+		local endEnt = trace.Entity
+		local endBone = trace.PhysicsBone
 
+		undo.Create("Plank")
+		undo.AddEntity(ent)
+
+		if (self:GetClientNumber(CONVAR_WELD) == 1) then
 			local startWeld = constraint.Weld(ent, startEnt, 0, startBone, 0, false, false)
 			if (not IsValid(startWeld)) then return false end
+			undo.AddEntity(startWeld)
 
 			if (endEnt ~= startEnt) then
 				local endWeld = constraint.Weld(ent, endEnt, 0, endBone, 0, false, false)
 				if (not IsValid(endWeld)) then return false end
+				undo.AddEntity(endWeld)
 			end
 		end
 
@@ -227,13 +232,22 @@ function TOOL:LeftClick(trace)
 			physObj:EnableMotion(false)
 		end
 
-		cleanup.Add(owner, "props", ent)
-		undo.Create("Plank")
-			undo.AddEntity(ent)
-			undo.AddEntity(startWeld)
-			undo.AddEntity(endWeld)
-			undo.SetPlayer(owner)
+		if (self:GetClientNumber(CONVAR_NOCOLLIDE) == 1) then
+			local startNc = constraint.NoCollide(ent, startEnt, 0, startBone)
+			if (not IsValid(startNc)) then return false end
+			undo.AddEntity(startNc)
+
+			if (endEnt ~= startEnt) then
+				local endNc = constraint.NoCollide(ent, endEnt, 0, endBone)
+				if (not IsValid(endNc)) then return false end
+				undo.AddEntity(endNc)
+			end
+		end
+
+		undo.SetPlayer(owner)
 		undo.Finish()
+
+		cleanup.Add(owner, "props", ent)
 
 		self:ClearObjects()
 		self:ReleaseGhostEntity()
@@ -258,13 +272,11 @@ function TOOL:UpdateGhostPlank(ent, trace)
 	UpdateClientPlank(ent, startPos:Distance(endPos), math.max(1, self:GetClientNumber(CONVAR_THICKNESS)))
 end
 
-local ConVarsDefault = TOOL:BuildConVarList()
-
 function TOOL.BuildCPanel( CPanel )
-	CPanel:AddControl( "Header", { Description = "#tool.plank.desc" } )
-	CPanel:AddControl( "ComboBox", { MenuButton = 1, Folder = "plank", Options = { [ "#preset.default" ] = ConVarsDefault }, CVars = table.GetKeys( ConVarsDefault ) } )
+	CPanel:AddControl("Header", { Description = "#tool.plank.desc" })
+	CPanel:AddControl("ComboBox", { MenuButton = 1, Folder = "plank", Options = { [ "#preset.default" ] = ConVarsDefault }, CVars = table.GetKeys( ConVarsDefault ) })
 
-	CPanel:AddControl( "Slider", {
+	CPanel:AddControl("Slider", {
 		Label = "#tool.plank." .. CONVAR_THICKNESS,
 		Command = "plank_" .. CONVAR_THICKNESS,
 		Type = "Float",
@@ -272,19 +284,19 @@ function TOOL.BuildCPanel( CPanel )
 		Max = 32
 	})
 
-	CPanel:AddControl( "Checkbox", {
+	CPanel:AddControl("Checkbox", {
 		Label = "#tool.plank." .. CONVAR_WELD,
 		Command = "plank_" .. CONVAR_WELD,
 		Help = true
 	})
 
-	CPanel:AddControl( "Checkbox", {
+	CPanel:AddControl("Checkbox", {
 		Label = "#tool.plank." .. CONVAR_NOCOLLIDE,
 		Command = "plank_" .. CONVAR_NOCOLLIDE,
 		Help = true
 	})
 
-	CPanel:AddControl( "Checkbox", {
+	CPanel:AddControl("Checkbox", {
 		Label = "#tool.plank." .. CONVAR_FREEZE,
 		Command = "plank_" .. CONVAR_FREEZE,
 		Help = true
