@@ -7,3 +7,7 @@
 *.phy
 *.sw.vtx
 *.vvd
+
+# Build files
+.gma
+_build/

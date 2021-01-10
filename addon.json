@@ -1,0 +1,21 @@
+{
+   "title": "Plank Tool",
+   "type": "tool",
+   "tags": [
+      "build",
+      "fun"
+   ],
+   "ignore": [
+      "README.md",
+      ".gitignore",
+      "Makefile",
+      "materials_src",
+      "gallery",
+      "*.png",
+      "*.jpg",
+      "*.dmx",
+      "*.qc",
+      "*.blend",
+      "*.blend1"
+   ]
+}
