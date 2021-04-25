@@ -75,6 +75,15 @@ if (SERVER) then
 end
 
 if (CLIENT) then
+	function UpdatePlankVisuals(ent, length, thickness)
+		local m = Matrix()
+		m:Scale(Vector(length/2, thickness, 1))
+		ent:EnableMatrix("RenderMultiply", m)
+
+		local rbMin, rbMax = ent:GetModelRenderBounds()
+		ent:SetRenderBounds(length * rbMin, length * rbMax)
+	end
+
 	net.Receive(
 		UPDATE_VISUAL_MSG,
 		function(len)
@@ -87,12 +96,8 @@ if (CLIENT) then
 			local thickness = net.ReadFloat()
 			if (thickness < 0) then return end
 
-			local m = Matrix()
-			m:Scale(Vector(length/2, thickness, 1))
-			ent:EnableMatrix("RenderMultiply", m)
-
-			local rbMin, rbMax = ent:GetModelRenderBounds()
-			ent:SetRenderBounds(length * rbMin, length * rbMax)
+			ent:EnableCustomCollisions(true)
+			UpdatePlankVisuals(ent, length, thickness)
 		end
 	)
 end
@@ -100,6 +105,8 @@ end
 --------------------------------------------------------------------------------
 -- Tool Implementation
 --------------------------------------------------------------------------------
+
+util.PrecacheModel("models/props/plank_swep/plank.mdl")
 
 --[[
 	ScalePhysicsMesh scales the physics mesh of a given entity. The new mesh is
@@ -110,6 +117,8 @@ end
 	success and nil on failure.
 ]]
 function ScalePhysicsMesh(ent, factor)
+	if (CLIENT) then return end
+
 	ent:PhysicsInit(SOLID_VPHYSICS)
 	local physObj = ent:GetPhysicsObject()
 	if (not IsValid(physObj)) then return nil end
@@ -123,6 +132,8 @@ function ScalePhysicsMesh(ent, factor)
 	end
 
 	ent:PhysicsInitConvex(physMesh)
+	ent:SetMoveType(MOVETYPE_VPHYSICS)
+	ent:SetSolid(SOLID_VPHYSICS)
 	ent:EnableCustomCollisions(true)
 	return ent:GetPhysicsObject()
 end
@@ -136,63 +147,72 @@ local ENT_MODIFIER_PLANK = "plank_params"
 
 	SpawnPlank does not handle cleanups or undos.
 ]]
-function SpawnPlank(model, startPos, endPos, thickness, normal)
-	local ent = ents.Create("prop_physics")
-	if (not IsValid(ent)) then return nil, nil end
 
-	-- Raise the plank slightly above the surface to prevent weird physics
-	local offset = 0.75 * normal
-	startPos = startPos + offset
-	endPos = endPos + offset
+if (SERVER) then
+	function SpawnPlank(model, startPos, endPos, thickness, normal)
+		local ent = ents.Create("prop_physics")
+		if (not IsValid(ent)) then return nil, nil end
 
-	ent:SetModel(model)
-	ent:SetPos(startPos)
+		-- Raise the plank slightly above the surface to prevent weird physics
+		local offset = 0.75 * normal
+		startPos = startPos + offset
+		endPos = endPos + offset
 
-	local ang = (startPos - endPos):AngleEx(normal)
-	ent:SetAngles(ang)
-	ent:Spawn()
+		ent:SetModel(model)
+		ent:SetPos(startPos)
 
-	local length = (startPos:Distance(endPos))
+		local ang = (startPos - endPos):AngleEx(normal)
+		ent:SetAngles(ang)
+		ent:Spawn()
 
-	physObj = ScalePhysicsMesh(ent, Vector(length/2, thickness, 1))
-	if not (IsValid(physObj)) then return nil, nil end
-	physObj:SetMass(60)
+		local length = (startPos:Distance(endPos))
 
-	ent:GetPhysicsObject():Wake()
-	UpdateClientPlank(ent, length, thickness)
+		physObj = ScalePhysicsMesh(ent, Vector(length/2, thickness, 1))
+		if not (IsValid(physObj)) then return nil, nil end
+		physObj:SetMass(60)
 
-	duplicator.StoreEntityModifier(ent, ENT_MODIFIER_PLANK, { 
-		length = length,
-		thickness = thickness
-	})
-	
-	return ent, physObj
-end
+		ent:GetPhysicsObject():Wake()
 
-function RestorePlank(owner, ent, data)
-	local startPos = ent:GetPos()
-	local length = data.length
-	physObj = ScalePhysicsMesh(ent, Vector(length/2, data.thickness, 1))
-	if not (IsValid(physObj)) then return nil, nil end
-	physObj:SetMass(60)
+		if (game.SinglePlayer()) then
+			UpdateClientPlank(ent, length, thickness)
+		else
+			-- TODO: I have no idea how this is actually supposed to be done. How do we get a newly-created entity
+			-- on the client? net.ReadEntity always fails...
+			timer.Simple(0, function() UpdateClientPlank(ent, length, thickness) end)
+		end
 
-	ent:GetPhysicsObject():Wake()
-	UpdateClientPlank(ent, length, data.thickness)
+		duplicator.StoreEntityModifier(ent, ENT_MODIFIER_PLANK, { 
+			length = length,
+			thickness = thickness
+		})
+		
+		return ent, physObj
+	end
+
+	function RestorePlank(owner, ent, data)
+		local startPos = ent:GetPos()
+		local length = data.length
+		physObj = ScalePhysicsMesh(ent, Vector(length/2, data.thickness, 1))
+		if not (IsValid(physObj)) then return nil, nil end
+		physObj:SetMass(60)
+
+		ent:GetPhysicsObject():Wake()
+		UpdateClientPlank(ent, length, data.thickness)
+	end
+
+	function UpdateClientPlank(ent, length, thickness)
+		net.Start(UPDATE_VISUAL_MSG)
+		net.WriteEntity(ent)
+		net.WriteFloat(length)
+		net.WriteFloat(thickness)
+		net.Broadcast()
+	end
 end
 
 duplicator.RegisterEntityModifier(ENT_MODIFIER_PLANK, RestorePlank)
 
-function UpdateClientPlank(ent, length, thickness)
-	net.Start(UPDATE_VISUAL_MSG)
-	net.WriteEntity(ent)
-	net.WriteFloat(length)
-	net.WriteFloat(thickness)
-	net.Broadcast()
-end
-
 function TOOL:LeftClick(trace)
 	if (IsValid(trace.Entity) and trace.Entity:IsPlayer()) then return false end
-	if (CLIENT) then return true end
 
 	local owner = self:GetOwner()
 	local model = self:GetClientInfo(CONVAR_PLANK_MODEL, "models/props/plank_swep/plank.mdl")
@@ -200,14 +220,19 @@ function TOOL:LeftClick(trace)
 	if (self:GetStage() == 0) then
 		local physObj = trace.Entity:GetPhysicsObjectNum(trace.PhysicsBone)
 
-		self:ReleaseGhostEntity()
 		self:MakeGhostEntity(model, trace.HitPos, owner:EyeAngles())
 		self:SetObject(2, trace.Entity, trace.HitPos, physObj, trace.PhysicsBone, trace.HitNormal)
 		self:SetStage(1)
 	else
+		self:ReleaseGhostEntity()
+		self:SetStage(0)
+
+		if (CLIENT) then
+			return true
+		end
+
 		local thickness = math.max(1, self:GetClientNumber(CONVAR_THICKNESS))
 		local ent, physObj = SpawnPlank(model, self:GetPos(2), trace.HitPos, thickness, trace.HitNormal)
-
 		local startEnt = self:GetEnt(2)
 		local startBone = self:GetBone(2)
 		local endEnt = trace.Entity
@@ -215,61 +240,69 @@ function TOOL:LeftClick(trace)
 
 		undo.Create("Plank")
 		undo.AddEntity(ent)
+		cleanup.Add(owner, "props", ent)
 
 		if (self:GetClientNumber(CONVAR_WELD) == 1) then
 			local startWeld = constraint.Weld(ent, startEnt, 0, startBone, 0, false, false)
 			if (not IsValid(startWeld)) then return false end
 			undo.AddEntity(startWeld)
+			cleanup.Add(owner, "props", startWeld)
 
 			if (endEnt ~= startEnt) then
 				local endWeld = constraint.Weld(ent, endEnt, 0, endBone, 0, false, false)
 				if (not IsValid(endWeld)) then return false end
 				undo.AddEntity(endWeld)
+				cleanup.Add(owner, "props", endWeld)
 			end
 		end
 
 		if (self:GetClientNumber(CONVAR_FREEZE) == 1) then
 			physObj:EnableMotion(false)
+			owner:AddFrozenPhysicsObject(ent, physObj)
 		end
 
 		if (self:GetClientNumber(CONVAR_NOCOLLIDE) == 1) then
 			local startNc = constraint.NoCollide(ent, startEnt, 0, startBone)
 			if (not IsValid(startNc)) then return false end
 			undo.AddEntity(startNc)
+			cleanup.Add(owner, "props", startNc)
 
 			if (endEnt ~= startEnt) then
 				local endNc = constraint.NoCollide(ent, endEnt, 0, endBone)
 				if (not IsValid(endNc)) then return false end
 				undo.AddEntity(endNc)
+				cleanup.Add(owner, "props", endNc)
 			end
 		end
 
 		undo.SetPlayer(owner)
 		undo.Finish()
 
-		cleanup.Add(owner, "props", ent)
-
 		self:ClearObjects()
-		self:ReleaseGhostEntity()
-		self:SetStage(0)
 	end
 
 	return true
 end
 
 function TOOL:Think()
-	if (CLIENT) then return end
 	if (self:GetStage() ~= 1 or not IsValid(self.GhostEntity)) then return end
-
-	self:UpdateGhostPlank(self.GhostEntity, self:GetOwner():GetEyeTrace())
+	self:UpdateGhostPlank(self.GhostEntity, self:GetOwner():GetEyeTrace(), self:GetOwner())
 end
 
-function TOOL:UpdateGhostPlank(ent, trace)
+function TOOL:UpdateGhostPlank(ent, trace, owner)
+	-- Ghost is updated on SERVER in singleplayer and CLIENT in multiplayer (?)
+	if ((SERVER and not game.SinglePlayer()) or not IsValid(ent)) then return end
+
 	local startPos = self:GetPos(2)
 	local endPos = trace.HitPos
 
-	ent:SetAngles((startPos - endPos):AngleEx(trace.Normal))
-	UpdateClientPlank(ent, startPos:Distance(endPos), math.max(1, self:GetClientNumber(CONVAR_THICKNESS)))
+	ent:SetAngles((startPos - endPos):AngleEx(trace.HitNormal))
+
+	if (game.SinglePlayer()) then
+		UpdateClientPlank(ent, startPos:Distance(endPos), math.max(1, self:GetClientNumber(CONVAR_THICKNESS)))
+	else
+		UpdatePlankVisuals(ent, startPos:Distance(endPos), math.max(1, self:GetClientNumber(CONVAR_THICKNESS)))
+	end
 end
 
 function TOOL.BuildCPanel( CPanel )

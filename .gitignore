@@ -9,5 +9,5 @@
 *.vvd
 
 # Build files
-.gma
+*.gma
 _build/
